@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 
-VERSION = "1.3.3"
+VERSION = "1.3.4"
 TERMINAL = {"completed", "cancelled", "superseded"}
 
 
@@ -157,6 +157,9 @@ def normalize_plan(raw, catalog=None, target=None):
                 default_output = min(model['max_output_tokens'], max(default_output, {'low': 1024, 'medium': 4096, 'high': 8192}[result['effort']] + 1024))
             result['max_output_tokens'] = number(item.get('max_output_tokens', default_output), 'max_output_tokens (verified model limit)', 128, model['max_output_tokens'], True)
             result["catalog_snapshot"] = model
+            from .request_limits import applies, POLICY
+            if applies(result):
+                result['output_policy'] = POLICY
             if model.get("thinking_mode") == "budget" and result["effort"] != "none":
                 result["thinking_budget"] = {"low": 1024, "medium": 4096, "high": 8192}[result["effort"]]
                 if result["thinking_budget"] >= result["max_output_tokens"]:
@@ -230,6 +233,9 @@ def executable_plan(plan):
     for member in plan["members"] + ([] if plan["chairman"] == "codex" else [plan["chairman"]]):
         model_available(member['catalog_snapshot'])
         price_valid(member)
+        from .request_limits import applies, POLICY
+        if applies(member) and member.get('output_policy') != POLICY:
+            raise BoardError('Approve the shared-context output policy before executing this Vertex chat model')
     from .composition import validate_plan
     validate_plan(plan)
 
@@ -378,7 +384,7 @@ class Store:
             if row["job"]:
                 job = db.execute("SELECT j.*, p.path FROM jobs j JOIN projects p ON p.id=j.project WHERE j.id=?", (row["job"],)).fetchone()
                 result["job_info"] = dict(job)
-                if row["kind"] in {"transport_resume", "capacity_resume", "background_resume", "ballot_resume"}:
+                if row["kind"] in {"transport_resume", "capacity_resume", "background_resume", "ballot_resume", "maas_resume"}:
                     from .transport_repair import disclosure
                     replacement, result["transport_update"] = disclosure(db, row, job)
                     result["job_info"].update(plan=canonical(replacement), plan_hash=digest(replacement))
@@ -389,7 +395,7 @@ class Store:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             ticket = db.execute("SELECT * FROM tickets WHERE token=?", (token,)).fetchone()
-            if not ticket or ticket["used"] or ticket["expires"] < time.time() or ticket["kind"] not in {"approve", "resume", "transport_resume", "capacity_resume", "background_resume", "ballot_resume"}:
+            if not ticket or ticket["used"] or ticket["expires"] < time.time() or ticket["kind"] not in {"approve", "resume", "transport_resume", "capacity_resume", "background_resume", "ballot_resume", "maas_resume"}:
                 raise BoardError("Invalid or expired confirmation")
             job = db.execute("SELECT * FROM jobs WHERE id=?", (ticket["job"],)).fetchone()
             if job["plan_hash"] != ticket["plan_hash"] or digest(json.loads(job["plan"])) != ticket["plan_hash"]:
@@ -398,7 +404,7 @@ class Store:
             if job["state"] not in allowed:
                 raise BoardError("Job no longer accepts this confirmation")
             plan = json.loads(job["plan"])
-            if ticket["kind"] in {"transport_resume", "capacity_resume", "background_resume", "ballot_resume"}:
+            if ticket["kind"] in {"transport_resume", "capacity_resume", "background_resume", "ballot_resume", "maas_resume"}:
                 from .transport_repair import resolve
                 plan = resolve(db, ticket, job)
             executable_plan(plan)
@@ -421,7 +427,7 @@ class Store:
                 db.execute("UPDATE reconfigurations SET state='approved' WHERE child=?", (job["id"],))
                 self.event(db, relation["parent"], "lineup_replaced", job["id"])
             db.execute("UPDATE tickets SET used=1 WHERE job=?", (job["id"],))
-            if ticket["kind"] in {"transport_resume", "capacity_resume", "background_resume", "ballot_resume"}:
+            if ticket["kind"] in {"transport_resume", "capacity_resume", "background_resume", "ballot_resume", "maas_resume"}:
                 db.execute("UPDATE jobs SET plan=?,plan_hash=? WHERE id=?", (canonical(plan), digest(plan), job["id"]))
                 db.execute("UPDATE transport_repairs SET approved_at=? WHERE token=?", (time.time(), token))
             db.execute("UPDATE jobs SET approved_hash=plan_hash,state='queued',error=NULL,updated=? WHERE id=?", (time.time(), job["id"]))
@@ -447,6 +453,11 @@ class Store:
                 result["codex_participation"] = {stage: "committed" if codex_done(db, job, row["round"], plan, stage) else "pending" for stage in ("proposal", "review")}
                 result["codex_participation"]["review_packet_ready"] = bool(db.execute("SELECT 1 FROM review_packets WHERE job=? AND round=?", (job,row["round"])).fetchone())
             result.update(workspace_path=project, approved=row["approved_hash"] == row["plan_hash"], accounted_cost_usd=sum(a["charged"] if a["charged"] is not None else a["reserved"] for a in attempts), cost_note="Includes conservative reservations for uncertain calls; final provider billing may differ.", attempts=[{k: a[k] for k in ("id", "round", "stage", "slot", "model", "state", "reserved", "charged", "error")} for a in attempts])
+            for summary, saved in zip(result['attempts'], attempts):
+                usage = json.loads(saved['usage']) if saved['usage'] else {}
+                for key in ('failure', 'request_limits'):
+                    if key in usage:
+                        summary[key] = usage[key]
             if include_results:
                 result["plan"] = plan
                 result["final"] = json.loads(row["final"]) if row["final"] else None

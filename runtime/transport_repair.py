@@ -65,18 +65,19 @@ def prepare(board, scope, job, ballot=False):
     with board.store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
         old = board.store.authorize(db, scope, job)
-        from . import capacity_repair, background_repair, review_repair
+        from . import capacity_repair, background_repair, review_repair, maas_repair
+        maas = json.loads(old['plan']).get('deliberation_harness', {}).get('implementation_sha256') == maas_repair.LEGACY
         background = json.loads(old["plan"]).get("deliberation_harness", {}).get("implementation_sha256") == background_repair.LEGACY
         capacity = json.loads(old['plan']).get('deliberation_harness', {}).get('implementation_sha256') == capacity_repair.LEGACY
-        plan = review_repair.candidate(db, old) if ballot else background_repair.candidate(db, old) if background else capacity_repair.candidate(db, old, catalog=board.catalog()) if capacity else candidate(db, old)
+        plan = review_repair.candidate(db, old) if ballot else maas_repair.candidate(db, old) if maas else background_repair.candidate(db, old) if background else capacity_repair.candidate(db, old, catalog=board.catalog()) if capacity else candidate(db, old)
         board.validate_execution(plan)
         token, now = secrets.token_urlsafe(32), time.time()
         db.execute("INSERT INTO tickets(token,kind,job,plan_hash,expires) VALUES(?,?,?,?,?)",
-                   (token, 'ballot_resume' if ballot else 'background_resume' if background else 'capacity_resume' if capacity else 'transport_resume', job, old["plan_hash"], now + 21600))
+                   (token, 'ballot_resume' if ballot else 'maas_resume' if maas else 'background_resume' if background else 'capacity_resume' if capacity else 'transport_resume', job, old["plan_hash"], now + 21600))
         db.execute("INSERT INTO transport_repairs VALUES(?,?,?,?,?,?,?,?,?,NULL)",
                    (token, job, old["plan"], old["plan_hash"], old["approved_hash"], canonical(plan), digest(plan), attempts_hash(db, job), now))
     return {"job_id": job, "confirmation_token": token,
-            "notice": "Approve one schema-correction/completion request per listed invalid reviewer. Each sees only its original anonymous packet and own response/errors; scores, ranking and existing statements stay fixed. Missing reasons are authored by that same reviewer. Existing costs and total budget remain; no automatic repeat." if ballot else "Approve Gemini background execution and cloud storage before new paid retries. Completed answers, frozen anonymous packets, valid reviews and unknown costs remain intact; no budget increase." if background else "Approve the audited capacity/transport update before resuming. Completed drafts, frozen packets, generation settings, rubric and total budget stay intact; unknown costs remain reserved. Original approval is archived."}
+            "notice": "Approve one schema-correction/completion request per listed invalid reviewer. Each sees only its original anonymous packet and own response/errors; scores, ranking and existing statements stay fixed. Missing reasons are authored by that same reviewer. Existing costs and total budget remain; no automatic repeat." if ballot else "Approve shared-context output limits before new paid retries. Each Vertex chat call reserves room for its complete input and uses the remaining output capacity up to the approved requested maximum. Thinking level, completed answers and total budget remain; the original approval is archived." if maas else "Approve Gemini background execution and cloud storage before new paid retries. Completed answers, frozen anonymous packets, valid reviews and unknown costs remain intact; no budget increase." if background else "Approve the audited capacity/transport update before resuming. Completed drafts, frozen packets, generation settings, rubric and total budget stay intact; unknown costs remain reserved. Original approval is archived."}
 
 
 def resolve(db, ticket, row):
@@ -87,6 +88,9 @@ def resolve(db, ticket, row):
     if ticket['kind'] == 'ballot_resume':
         from .review_repair import candidate as review_candidate
         expected = review_candidate(db, row)
+    elif ticket['kind'] == 'maas_resume':
+        from .maas_repair import candidate as maas_candidate
+        expected = maas_candidate(db, row)
     elif ticket['kind'] == 'background_resume':
         from .background_repair import candidate as background_candidate
         expected = background_candidate(db, row)
@@ -104,7 +108,7 @@ def disclosure(db, ticket, row):
     plan = resolve(db, ticket, row)
     successful = db.execute("SELECT count(*) FROM attempts WHERE job=? AND state='succeeded'", (row["id"],)).fetchone()[0]
     previous = json.loads(row["plan"])["deliberation_harness"]["implementation_sha256"]
-    return plan, {"from_version": ('1.3.0' if previous == '712a07031c0981404b514af20195efccd9432818b8215885f14d7c6274a57326' else core.VERSION) if ticket['kind'] == 'ballot_resume' else '1.2.5' if ticket['kind'] == 'background_resume' else '1.2.4' if ticket['kind'] == 'capacity_resume' else LEGACY_BUILDS[previous], "to_version": core.VERSION,
+    return plan, {"from_version": ('1.3.0' if previous == '712a07031c0981404b514af20195efccd9432818b8215885f14d7c6274a57326' else core.VERSION) if ticket['kind'] == 'ballot_resume' else '1.3.3' if ticket['kind'] == 'maas_resume' else '1.2.5' if ticket['kind'] == 'background_resume' else '1.2.4' if ticket['kind'] == 'capacity_resume' else LEGACY_BUILDS[previous], "to_version": core.VERSION,
                   "kind": ticket['kind'],
                   "previous_plan_hash": row["plan_hash"], "new_plan_hash": digest(plan),
                   "reused_completed_drafts": successful}

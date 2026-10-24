@@ -226,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
                 action = t('Approve background execution and resume')
             elif info['kind'] == 'ballot_resume':
                 action = t('Approve review format correction')
+            elif info['kind'] == 'maas_resume':
+                action = t('Approve shared-context limits and resume')
             state = t('Mock test · No external model calls') if plan["provider"] == "mock" else t('External models · API charges may apply')
             members = ""
             for m in plan["members"] + ([] if plan["chairman"] == "codex" else [dict(plan["chairman"], role="Chairman — " + plan["chairman"]["role"])]):
@@ -246,6 +248,9 @@ class Handler(BaseHTTPRequestHandler):
                 names = ', '.join(plan['members'][s['slot']]['model'] for s in repair['slots'])
                 estimate = sum(s['estimated_reservation_usd'] for s in repair['slots'])
                 body += t('<h2>Correct review format and complete reasons</h2><p>%s: at most one call per reviewer. Each original reviewer receives only its frozen anonymous packet, its own prior answer, and the format errors. Existing scores, ranking, commentary, issues, and uncertainties stay fixed. Missing criterion reasons are newly authored by that same model.</p><p>Completed drafts and valid reviews are reused. After strict validation, the meeting waits for chairman review without producing a final report. Calls share the original budget; failures do not retry automatically.</p><details><summary>Cost reservation and limits</summary><p>The complete correction packet reserves an estimated US$%.4f. Prior costs and uncertain reservations remain; the total budget does not increase. Actual cost depends on provider usage. Larger packets undergo fresh capacity and budget checks.</p></details>') % (html.escape(names), estimate)
+            elif info.get('transport_update') and info['kind'] == 'maas_resume':
+                update = info['transport_update']
+                body += t('<h2>Shared-context output update</h2><p>%s → %s: reuse %s completed steps and retry only missing steps, followed by the approved anonymous review. Thinking level, task text, models, rubric, and total budget stay fixed. The original plan and approval are archived.</p><p>Each Vertex chat request reserves space for its complete input before setting the output limit. The calculation below is part of this approval; no input is truncated and no failed call retries automatically.</p>') % (html.escape(update['from_version']), html.escape(update['to_version']), update['reused_completed_drafts'])
             elif info.get('transport_update') and info['kind'] == 'background_resume':
                 update = info['transport_update']
                 body += t('<h2>Gemini background execution update</h2><p>%s → %s: reuse %s completed steps, preserving drafts, anonymous packets, valid scores, and the original budget. Only incomplete steps run. Earlier requests without a cloud ID cannot be recovered this way; their uncertain cost reservations remain.</p><p>Once a new request has a cloud ID, reconnect by reading that same operation without generating again. The original plan and approval are archived.</p>') % (html.escape(update['from_version']), html.escape(update['to_version']), update['reused_completed_drafts'])
@@ -307,6 +312,19 @@ class Handler(BaseHTTPRequestHandler):
             body += t('<p><strong>Thinking level:</strong> %s</p>') % html.escape(levels.get(plan.get('thinking_level'), t('Historical plan')))
             if plan.get('token_policy'):
                 body += t('<p>Task and review materials remain complete; the provider enforces actual context capacity. Highest uses verified model output capacity. Balanced and Economy use task-adjustable output allowances. Explicit settings approved for this round take precedence. The monetary budget is approved separately.</p>')
+            from .worker import estimate_plan
+            from .request_limits import applies
+            capacity = [r for r in estimate_plan(plan)['members'] if r.get('request_limits')]
+            shared_chairman = plan['chairman'] != 'codex' and applies(plan['chairman'])
+            if capacity or shared_chairman:
+                body += t('<p><strong>Shared-context limits:</strong> Vertex chat output uses the smaller of the requested maximum and context capacity minus the complete input estimate. The estimate uses UTF-8 bytes plus 4,096 framing tokens, not measured tokens. It is recalculated for each full review packet. If no verified headroom remains, execution stops before sending.</p><details><summary>Output capacity calculation</summary><ul>')
+                for row in capacity:
+                    cap = row['request_limits']
+                    body += t('<li>%s: requested %s; context %s; first draft input estimate %s; actual first draft output limit %s.</li>') % (html.escape(row['model']), cap['requested_max_output_tokens'], cap['context_tokens'], cap['input_token_upper_estimate'], cap['effective_max_output_tokens'])
+                if shared_chairman:
+                    chair = plan['chairman']
+                    body += t('<li>%s: chairman requested maximum %s; context %s. Its effective output limit is calculated from the complete synthesis packet when that stage is ready, using the same approved rule.</li>') % (html.escape(chair['model']), chair['max_output_tokens'], chair['catalog_snapshot']['context_tokens'])
+                body += '</ul></details>'
             if plan.get('composition'):
                 body += t('<p><strong>Board size:</strong> Current Codex + %s external models, selected for complementary capabilities rather than a manufacturer quota.</p>') % plan['composition']['external_models']
             body += t('<h2>Workflow: %s</h2><details><summary>Workflow details</summary>%s</details><h2>Models and routes</h2><ul>%s</ul><p><strong>Chairman:</strong> %s</p>') % (html.escape(plan["workflow"]), html.escape(plan["workflow_reason"]), members, html.escape(t('Current Codex chat') if plan["chairman"] == "codex" else plan["chairman"]["model"]))
@@ -334,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             if plan.get("cost_estimate"):
                 estimate = plan["cost_estimate"]
                 body += t('<p>First-round draft reservation: US$%.4f; up to %s scheduled model calls. Reviews, later rounds, and retries share the approved budget. Insufficient budget saves progress and stops dispatch.</p>') % (estimate["first_round_proposals_reserve_usd"], estimate["max_scheduled_calls_without_retries"])
-            if info["kind"] in {"resume", "transport_resume", "capacity_resume", "background_resume", "ballot_resume"}:
+            if info["kind"] in {"resume", "transport_resume", "capacity_resume", "background_resume", "ballot_resume", "maas_resume"}:
                 with self.server.board.store.connect() as db:
                     rows = db.execute("SELECT round,stage,slot,model,state,reserved,charged,error FROM attempts WHERE job=? ORDER BY created", (job["id"],)).fetchall()
                 body += t("<p class='notice'>Successful steps are reused. Earlier uncertain requests may already have incurred charges; their reservations still count against the budget. Models and total budget stay fixed.</p><details><summary>Execution and cost history</summary><pre>") + html.escape(json.dumps([dict(r) for r in rows], ensure_ascii=False, indent=2)) + "</pre></details>"
@@ -408,7 +426,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 if form.get("consent") != ["yes"]:
                     raise BoardError("Confirm the displayed plan before starting")
-                if info["kind"] not in {"approve", "resume", "transport_resume", "capacity_resume", "background_resume", "ballot_resume"}:
+                if info["kind"] not in {"approve", "resume", "transport_resume", "capacity_resume", "background_resume", "ballot_resume", "maas_resume"}:
                     raise BoardError("Invalid approval link")
                 plan = json.loads(info["job_info"]["plan"])
                 if any(m.get("catalog_snapshot", {}).get("budget_type") == "estimated_dispatch_gate" for m in plan["members"] + ([] if plan["chairman"] == "codex" else [plan["chairman"]])) and form.get("variable_cost_consent") != ["yes"]:

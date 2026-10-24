@@ -182,9 +182,11 @@ def reservation(member, messages, provider):
     # UTF-8 bytes are an upper estimate, not a tokenizer or proof of overflow.
     # Reserve for the largest input the provider can accept; its tokenizer
     # enforces the real context limit. Never cut shared evidence or peer answers.
-    tokens = min(input_bound(messages), model["context_tokens"])
+    from .request_limits import settings
+    limits = settings(member, messages)
+    tokens = min(limits['input_token_upper_estimate'] if limits else input_bound(messages), model["context_tokens"])
     price = model["pricing"]
-    output = member["max_output_tokens"] + (model.get("estimated_reasoning_tokens", 0) if member["effort"] != "none" else 0)
+    output = (limits['effective_max_output_tokens'] if limits else member["max_output_tokens"]) + (model.get("estimated_reasoning_tokens", 0) if member["effort"] != "none" else 0)
     inp_rate, out_rate = pricing.rates(price, tokens, conservative=True)
     return (tokens * inp_rate + output * out_rate) / 1000000
 

@@ -48,6 +48,10 @@ def estimate_plan(plan):
         messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": proposal_prompt(neutral_packet(plan), member)}]
         reserve = reservation(member, messages, plan["provider"])
         rows.append({"model": member["model"], "role": member["role"], "first_proposal_reserve_usd": reserve})
+        from .request_limits import settings
+        limits = settings(member, messages)
+        if limits:
+            rows[-1]['request_limits'] = limits
         if plan["provider"] != "mock":
             quote = member["catalog_snapshot"]["pricing"]
             limit = min(member['catalog_snapshot']['max_input_tokens'], quote.get('input_token_limit', 100000))
@@ -633,13 +637,16 @@ class Board:
             if repair:
                 attempt_id, messages = repair
             reserve = reservation(member, messages, plan["provider"])
+            from .request_limits import settings
+            limits = settings(member, messages)
             used = db.execute("SELECT COALESCE(SUM(COALESCE(charged,reserved)),0) FROM attempts WHERE job=?", (job,)).fetchone()[0]
             if used + reserve > plan["max_cost_usd"] + 1e-10:
                 self.store.event(db, job, "budget_blocked", "%s/%s/%s would exceed the approved budget" % (round_no, stage, slot))
                 return None
             if member.get("catalog_snapshot", {}).get("budget_type") == "estimated_dispatch_gate":
                 reserve = plan["max_cost_usd"] - used
-            db.execute("INSERT INTO attempts(id,job,round,stage,slot,model,state,reserved,created) VALUES(?,?,?,?,?,?,'running',?,?)", (attempt_id, job, round_no, stage, slot, member["model"], reserve, time.time()))
+            initial_usage = canonical({'request_limits': limits}) if limits else None
+            db.execute("INSERT INTO attempts(id,job,round,stage,slot,model,state,reserved,created,usage) VALUES(?,?,?,?,?,?,'running',?,?,?)", (attempt_id, job, round_no, stage, slot, member["model"], reserve, time.time(), initial_usage))
         provider = self.providers[plan["provider"]]
         checkpoint = {"last":0, "pending":None, "timer":None}
         checkpoint_lock = threading.Lock()
@@ -662,8 +669,12 @@ class Board:
                 if text is None:
                     return
                 with self.store.connect() as db:
-                    db.execute("UPDATE attempts SET content=?,usage=? WHERE id=? AND state='running'", (text, canonical({"partial":True, "visible_characters":len(text), "last_progress_at":now, "cost_basis":"Request in progress; reservation retained until final usage is known"}), attempt_id))
+                    usage = {"partial":True, "visible_characters":len(text), "last_progress_at":now, "cost_basis":"Request in progress; reservation retained until final usage is known"}
+                    if limits:
+                        usage['request_limits'] = limits
+                    db.execute("UPDATE attempts SET content=?,usage=? WHERE id=? AND state='running'", (text, canonical(usage), attempt_id))
                 checkpoint["last"] = now
+        failure = None
         try:
             if cancelled.is_set():
                 raise CallCancelled()
@@ -673,6 +684,7 @@ class Board:
             state, reason, charged = "uncertain", "Cancelled; provider may have processed the request", None
         except CallFailed as error:
             state, reason, charged = ("uncertain" if error.uncertain else "failed"), str(error), (None if error.uncertain else 0)
+            failure = error.diagnostic or ({'http_status': error.http_status} if error.http_status is not None else None)
         except Exception as error:
             state, reason, charged = "uncertain", "Unexpected provider failure: " + type(error).__name__, None
         finally:
@@ -682,5 +694,12 @@ class Board:
         if checkpoint["pending"] is not None:
             progress(checkpoint["pending"], force=True)
         with self.store.connect() as db:
+            row = db.execute('SELECT usage FROM attempts WHERE id=?', (attempt_id,)).fetchone()
+            usage = json.loads(row['usage']) if row['usage'] else {}
+            if limits:
+                usage['request_limits'] = limits
+            if failure:
+                usage['failure'] = failure
+            db.execute("UPDATE attempts SET usage=? WHERE id=? AND state='running'", (canonical(usage), attempt_id))
             db.execute("UPDATE attempts SET state=?,error=?,charged=?,finished=? WHERE id=? AND state='running'", (state, reason, charged, time.time(), attempt_id))
         return None

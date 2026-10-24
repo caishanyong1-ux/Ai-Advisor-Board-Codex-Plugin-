@@ -693,3 +693,21 @@ MESSAGES = {'</style><main><small>AI ADVISORY BOARD · Local Codex plugin</small
  'API key': {'zh-Hans': 'API 密钥', 'zh-Hant': 'API 金鑰'},
  'Original plan and technical records remain in their recorded language.': {'zh-Hans': '方案原文与技术记录保留原始语言。',
                                                                             'zh-Hant': '方案原文與技術紀錄保留原始語言。'}}
+
+MESSAGES.update({
+    '<li>%s: chairman requested maximum %s; context %s. Its effective output limit is calculated from the complete synthesis packet when that stage is ready, using the same approved rule.</li>': {
+        'zh-Hans': '<li>%s：主席请求上限 %s；上下文容量 %s。进入综合判断阶段时，会根据完整材料，按同一项已批准规则计算实际输出上限。</li>',
+        'zh-Hant': '<li>%s：主席請求上限 %s；上下文容量 %s。進入綜合判斷階段時，會根據完整材料，按同一項已批准規則計算實際輸出上限。</li>'},
+    'Approve shared-context limits and resume': {
+        'zh-Hans': '批准共享上下文容量规则并续跑',
+        'zh-Hant': '批准共享上下文容量規則並續跑'},
+    '<h2>Shared-context output update</h2><p>%s → %s: reuse %s completed steps and retry only missing steps, followed by the approved anonymous review. Thinking level, task text, models, rubric, and total budget stay fixed. The original plan and approval are archived.</p><p>Each Vertex chat request reserves space for its complete input before setting the output limit. The calculation below is part of this approval; no input is truncated and no failed call retries automatically.</p>': {
+        'zh-Hans': '<h2>共享上下文输出更新</h2><p>%s → %s：保留 %s 个已完成步骤，只补跑缺失步骤，再进行已批准的匿名互评。推理级别、任务原文、模型、评分标准与总预算保持不变。原方案及批准记录将存档。</p><p>每次 Vertex chat 请求先为完整输入预留空间，再设置输出上限。下方计算规则属于本次批准内容；不会截短输入，也不会自动重试失败请求。</p>',
+        'zh-Hant': '<h2>共享上下文輸出更新</h2><p>%s → %s：保留 %s 個已完成步驟，只補跑缺失步驟，再進行已批准的匿名互評。推理級別、任務原文、模型、評分標準與總預算保持不變。原方案及批准紀錄將存檔。</p><p>每次 Vertex chat 請求先為完整輸入預留空間，再設定輸出上限。下方計算規則屬於本次批准內容；不會截短輸入，也不會自動重試失敗請求。</p>'},
+    '<p><strong>Shared-context limits:</strong> Vertex chat output uses the smaller of the requested maximum and context capacity minus the complete input estimate. The estimate uses UTF-8 bytes plus 4,096 framing tokens, not measured tokens. It is recalculated for each full review packet. If no verified headroom remains, execution stops before sending.</p><details><summary>Output capacity calculation</summary><ul>': {
+        'zh-Hans': '<p><strong>共享上下文容量：</strong>Vertex chat 输出上限取请求上限与「上下文容量减去完整输入估计量」中的较小值。估计采用 UTF-8 字节数加 4,096 个格式预留 token，并非精确 token 计数。每份完整互评材料均重新计算；无法确认剩余空间时，在发送前停止。</p><details><summary>查看输出容量计算</summary><ul>',
+        'zh-Hant': '<p><strong>共享上下文容量：</strong>Vertex chat 輸出上限取請求上限與「上下文容量減去完整輸入估計量」中的較小值。估計採用 UTF-8 位元組數加 4,096 個格式預留 token，並非精確 token 計數。每份完整互評材料均重新計算；無法確認剩餘空間時，在傳送前停止。</p><details><summary>查看輸出容量計算</summary><ul>'},
+    '<li>%s: requested %s; context %s; first draft input estimate %s; actual first draft output limit %s.</li>': {
+        'zh-Hans': '<li>%s：请求上限 %s；上下文容量 %s；初稿输入估计 %s；初稿实际输出上限 %s。</li>',
+        'zh-Hant': '<li>%s：請求上限 %s；上下文容量 %s；初稿輸入估計 %s；初稿實際輸出上限 %s。</li>'}
+})

@@ -19,10 +19,11 @@ class CallCancelled(Exception):
 
 
 class CallFailed(Exception):
-    def __init__(self, message, uncertain=True, http_status=None):
+    def __init__(self, message, uncertain=True, http_status=None, diagnostic=None):
         super().__init__(message)
         self.uncertain = uncertain
         self.http_status = http_status
+        self.diagnostic = diagnostic
 
 
 def count(value):
@@ -75,7 +76,11 @@ class Vertex:
             response = conn.getresponse()
             if response.status != 200:
                 label = {401: "ADC authentication", 403: "project/IAM/model entitlement", 404: "model/region/resource availability", 429: "quota/capacity/spend cap"}.get(response.status, "provider request")
-                raise CallFailed("Google HTTP %s: check %s; no automatic retry" % (response.status, label), response.status >= 500)
+                from .http_errors import diagnostic
+                detail = diagnostic(response, payload, (token, target.get('project_id'), target.get('quota_project_id')))
+                explanation = ': ' + '; '.join(detail[k] for k in ('provider_status', 'message') if detail.get(k))
+                raise CallFailed("Google HTTP %s: check %s%s; no automatic retry" % (response.status, label, explanation.rstrip(': ')),
+                                 response.status >= 500, http_status=response.status, diagnostic=detail)
             phase = "reading response body"
             result = read_response(response, stream_family, progress, token)
             if cancelled and cancelled.is_set():
@@ -162,13 +167,17 @@ class Vertex:
             complete = safe["finish_reason"] == "STOP" and (out is None or out <= member["max_output_tokens"])
         elif snapshot["api_family"] in {"openai_maas", "mistral"}:
             # MaaS examples require the first message to be user; include the chairman rules there.
-            combined = system + "\n\n" + "\n\n".join(m["content"] for m in user)
-            payload = {"model": snapshot.get("wire_model", member["model"]), "messages": [{"role": "user", "content": combined}],
-                       "max_tokens": member["max_output_tokens"], **snapshot.get("parameters", {}), "stream": True, "stream_options": {"include_usage": True}}
+            from .request_limits import settings, wire_messages
+            limits = settings(member, messages)
+            payload = {**snapshot.get("parameters", {}), "model": snapshot.get("wire_model", member["model"]), "messages": wire_messages(messages),
+                       "max_tokens": limits['effective_max_output_tokens'], "stream": True, "stream_options": {"include_usage": True}}
             if member["effort"] != "none":
                 payload["reasoning_effort"] = member["effort"]
             path = root + "/endpoints/openapi/chat/completions" if snapshot["api_family"] == "openai_maas" else base + ":streamRawPredict"
-            return chat_result(self._request(host, path, payload, target, timeout, call_id, cancelled, "chat", progress), member)
+            result = chat_result(self._request(host, path, payload, target, timeout, call_id, cancelled, "chat", progress),
+                                 dict(member, max_output_tokens=limits['effective_max_output_tokens']))
+            result['usage']['request_limits'] = limits
+            return result
         elif snapshot["api_family"] == "claude":
             payload = {"anthropic_version": "vertex-2023-10-16", "system": system, "messages": user, "max_tokens": member["max_output_tokens"], "stream": True}
             if snapshot.get("thinking_mode", "adaptive") == "adaptive":

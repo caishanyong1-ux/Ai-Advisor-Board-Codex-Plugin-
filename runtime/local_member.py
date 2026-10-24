@@ -11,6 +11,28 @@ from .core import BoardError, canonical, digest, text_field
 from . import deliberation, harness
 
 
+def agent_namespace(db, row):
+    """Derive identity scope from the job's original task, never caller input.
+
+    Canonical task names can repeat in another Codex chat. Unlinked historical
+    jobs retain a conservative project scope; rebinding a session cannot change
+    an already linked job's original namespace.
+    """
+    task = db.execute('SELECT t.conversation FROM board_tasks t JOIN task_jobs j ON j.task=t.id WHERE j.job=?', (row['id'],)).fetchone()
+    return {'kind': 'conversation', 'id': task[0]} if task else {'kind': 'project', 'id': row['project']}
+
+
+def prior_agents(db, namespace):
+    if namespace['kind'] == 'conversation':
+        return db.execute('SELECT a.usage FROM attempts a JOIN task_jobs j ON j.job=a.job '
+                          'JOIN board_tasks t ON t.id=j.task WHERE a.model=? AND a.usage IS NOT NULL AND t.conversation=?',
+                          (deliberation.CODEX_MODEL, namespace['id']))
+    return db.execute('SELECT a.usage FROM attempts a JOIN jobs j ON j.id=a.job '
+                      'WHERE a.model=? AND a.usage IS NOT NULL AND j.project=? '
+                      'AND NOT EXISTS(SELECT 1 FROM task_jobs t WHERE t.job=j.id)',
+                      (deliberation.CODEX_MODEL, namespace['id']))
+
+
 def packet(board, scope, job, stage):
     if stage not in {"proposal", "review"}:
         raise BoardError("Codex stage must be proposal or review")
@@ -33,7 +55,7 @@ def packet(board, scope, job, stage):
             value = json.loads(existing["packet"])
             if digest(value) != existing["packet_hash"]:
                 raise BoardError("Independent assignment integrity check failed")
-            return dict(value, assignment_id=existing["id"], packet_hash=existing["packet_hash"])
+            return dict(value, assignment_id=existing["id"], packet_hash=existing["packet_hash"], agent_namespace=agent_namespace(db, row))
         if stage == "proposal":
             question = neutral_packet(plan)
             feedback = db.execute("SELECT feedback FROM rounds WHERE job=? AND round=?", (job,row["round"])).fetchone()[0]
@@ -46,7 +68,7 @@ def packet(board, scope, job, stage):
                  "isolation": "Spawn a NEW subagent with fork_turns=none. Supply only this system and prompt. No tools, source browsing, parent conversation, other drafts/reviews, identities or discussion. The review agent must differ from the draft agent and chairman. Return only a visible answer, not hidden reasoning. Submit its actual agent ID and unedited output. If isolated-agent tools are unavailable, wait; never impersonate the independent member."}
         ident = "ca_" + secrets.token_hex(12)
         db.execute("INSERT INTO codex_assignments VALUES(?,?,?,?,?,?,NULL)", (ident,job,row["round"],stage,canonical(value),digest(value)))
-        return dict(value, assignment_id=ident, packet_hash=digest(value))
+        return dict(value, assignment_id=ident, packet_hash=digest(value), agent_namespace=agent_namespace(db, row))
 
 
 def submit(board, scope, job, assignment_id, packet_hash, agent_id, answer):
@@ -70,14 +92,15 @@ def submit(board, scope, job, assignment_id, packet_hash, agent_id, answer):
         if row["state"] not in {"queued", "running", "waiting_codex_proposal", "waiting_codex_review", "paused", "pausing", "needs_attention"} or row["approved_hash"] != row["plan_hash"]:
             raise BoardError("This meeting no longer accepts the independent output")
         parent = db.execute("SELECT conversation FROM board_sessions WHERE project=? AND job=?", (row["project"],job)).fetchall()
-        if agent_id in {p[0] for p in parent} or agent_id in {"codex", "chairman", "root", "/root"}:
+        namespace = agent_namespace(db, row)
+        if agent_id in {p[0] for p in parent} or agent_id in {"codex", "chairman", "root", "/root", namespace['id']}:
             raise BoardError("The chairman cannot impersonate the independent agent")
         proposer = db.execute("SELECT agent_id FROM codex_assignments WHERE job=? AND round=? AND stage='proposal'", (job,row["round"])).fetchone()
         if stage == "review" and (not proposer or not proposer[0] or proposer[0] == agent_id):
             raise BoardError("Use a different fresh isolated review agent; never reuse the draft agent")
         if prior and row["state"] in {"needs_attention", "paused", "pausing"}:
             raise BoardError("Resume confirmation is required before retrying an invalid contribution")
-        used = db.execute("SELECT usage FROM attempts WHERE model=? AND usage IS NOT NULL", (deliberation.CODEX_MODEL,))
+        used = prior_agents(db, namespace)
         if any(json.loads(a["usage"]).get("agent_id") == agent_id for a in used):
             raise BoardError("Each independent stage and retry requires a fresh agent; previously submitted agents cannot be reused")
         errors = []
@@ -86,7 +109,7 @@ def submit(board, scope, job, assignment_id, packet_hash, agent_id, answer):
             errors = harness.validate_ballot(answer, list(review["label_map"]), plan["rubric_profile"])["errors"]
         state = "incomplete" if errors else "succeeded"
         now = time.time()
-        usage = {"cost_basis":"Codex subagent uses the host account; external API cost is zero, Codex usage is not included in the API budget", "agent_id":agent_id, "assignment_id":assignment_id, "packet_hash":packet_hash}
+        usage = {"cost_basis":"Codex subagent uses the host account; external API cost is zero, Codex usage is not included in the API budget", "agent_id":agent_id, "agent_namespace":namespace, "assignment_id":assignment_id, "packet_hash":packet_hash}
         db.execute("INSERT INTO attempts(id,job,round,stage,slot,model,state,reserved,charged,content,usage,error,created,finished) VALUES(?,?,?,?,?,?,?,0,0,?,?,?,?,?)", ("a_"+secrets.token_hex(12),job,row["round"],stage,slot,deliberation.CODEX_MODEL,state,answer,canonical(usage),"; ".join(errors) if errors else None,now,now))
         db.execute("UPDATE codex_assignments SET agent_id=? WHERE id=?", (agent_id,assignment_id))
         if errors and row["state"] not in {"paused", "pausing"}:
