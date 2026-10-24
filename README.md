@@ -1,4 +1,4 @@
-# AI Advisory Board 1.3.3 — Codex plugin
+# AI Advisory Board 1.3.4 — Codex plugin
 
 AI Advisory Board brings structured multi-model discussion into Codex. Use it to compare independent approaches to a research question, software design, or complex decision, then turn those perspectives into a clear, evidence-aware recommendation. It adapts the workflow of [HaroldZhong's AI Advisory Board](https://github.com/HaroldZhong/ai-advisory-board) into a local Codex plugin.
 
@@ -10,6 +10,13 @@ Codex chairs the meeting: it clarifies the task, prepares selected evidence, rec
 - **Bring your own connections:** supported Vertex AI and compatible API routes; no credentials, account settings, or meeting records are bundled.
 
 Only the user can close the board project. Model agreement is advisory and still requires verification.
+
+## What's new in 1.3.4
+
+- **Vertex chat capacity:** DeepSeek and other Vertex chat routes reserve room for the complete input before setting the output parameter. Highest keeps the requested model maximum and uses the remaining shared context; reasoning effort stays fixed. The approval page discloses the conservative byte-based calculation, and every attempt records its effective limit. Inputs and peer answers are never silently truncated.
+- **Actionable HTTP failures:** Google HTTP errors retain their status and bounded, sanitized parameter diagnostics. Raw bodies, request text, credentials, and arbitrary debug details are not stored. Failed calls do not retry automatically.
+- **Preserved work:** an audited 1.3.3 first round, at rest before review, can request a new approval for the capacity rule. Completed answers, independent Codex packets, prior costs, and the original approval remain intact. This is not a general migration of arbitrary old workflows.
+- **Codex identity:** canonical agent names are scoped to the original Codex conversation, preventing collisions between unrelated chats. Fresh-agent checks still apply across all stages and agendas within that conversation. Previously uncommitted answers keep their real identity and original assignment.
 
 ## What's new in 1.3.3
 
