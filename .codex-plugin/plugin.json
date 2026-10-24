@@ -1,6 +1,6 @@
 {
   "name": "ai-advisory-board",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "A user-approved multi-provider advisory board with fresh model research, persistent meetings and Codex as chairman.",
   "author": {
     "name": "AI Advisory Board Contributors"
