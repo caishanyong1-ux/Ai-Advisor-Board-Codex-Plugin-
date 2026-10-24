@@ -1,0 +1,96 @@
+{
+  "version": "1.3.3",
+  "validation_date": "2026-10-24",
+  "release_status": "verified",
+  "source_tests": {
+    "command": "python3 -B -m unittest discover -s tests -v",
+    "environment": "Isolated temporary state, synthetic data, fake providers and loopback HTTP servers.",
+    "passed": 211,
+    "seconds": 27.518
+  },
+  "language_regressions": [
+    "Concurrent English, Simplified Chinese and Traditional Chinese conversations remain isolated by project and chat",
+    "API edit/save/enable/disable, Vertex setup, approval pages and expired links retain the originating conversation language",
+    "Setup token renewal and process reconnect preserve language",
+    "Presentation changes preserve approved plan hashes, recorded model answers and anonymous ballots",
+    "Internal en-US and task-specific deliverable_language remain independent",
+    "Other languages require a complete versioned template from current Codex; malformed HTML or moved placeholders are rejected",
+    "Stale templates never block status, result retrieval or cancellation; functional forms require refreshed translations"
+  ],
+  "independent_review": {
+    "result": "No remaining reliability or isolation blockers found; both reported issues fixed",
+    "findings_resolved": [
+      "Bind positional format values to their positions relative to HTML markup",
+      "Use imperative Enable/Disable labels for English API actions"
+    ],
+    "checks": "Four catalog tests and independent temporary-database checks of isolation, token renewal, persistence, stale catalogs, and unchanged plan hashes",
+    "external_reviewer_calls": 0,
+    "production_writes": false
+  },
+  "skill_validation": "Passed",
+  "language_policy": {
+    "internal": "American English (en-US)",
+    "formal_task_outputs": "Task-specific approved deliverable_language",
+    "user_reports_and_functional_forms": "Current Codex conversation language, honoring explicit preferences and Chinese script",
+    "built_in_interfaces": [
+      "en-US",
+      "zh-Hans",
+      "zh-Hant"
+    ],
+    "additional_languages": "Complete versioned interface translation by current Codex; no new external model request",
+    "quoted_evidence_and_original_answers": "Preserved verbatim"
+  },
+  "harness": {
+    "version": "codex-deliberation-v2",
+    "upstream_commit": "b5d687820e88c10de25a9a2343d3cc478e497524",
+    "implementation_sha256": "43315eecfdc6bee03681e7bfff2f92725640f1fc3471fbb79b2215fcb9f41aea",
+    "rubric_version": "shared-criteria-v1",
+    "rubric_profile": "general",
+    "criteria": {
+      "task_alignment": {
+        "weight": 25,
+        "description": "Answers the whole approved question and satisfies its requested deliverable and constraints."
+      },
+      "correctness_evidence": {
+        "weight": 30,
+        "description": "Claims are accurate relative to supplied evidence; distinguish established facts, inference and unknowns. Creative work does not need irrelevant citations. Peer agreement is not evidence."
+      },
+      "reasoning": {
+        "weight": 20,
+        "description": "Conclusions follow from premises; consider consequential alternatives, counterevidence and failure modes without manufacturing doubts."
+      },
+      "actionability": {
+        "weight": 15,
+        "description": "The answer can be used for the actual task; recommendations are feasible and concrete. For explanatory/creative work, judge usefulness rather than demand an implementation plan."
+      },
+      "clarity": {
+        "weight": 10,
+        "description": "Clear, precise, appropriately concise and suited to the requested audience and format; length, polish and confidence alone earn no credit."
+      }
+    },
+    "anchors": {
+      "0": "Absent, unusable, or directly contradicts a central requirement/evidence.",
+      "1": "Major defects; substantial reconstruction needed.",
+      "2": "Partly useful, but material gaps or unsupported claims remain.",
+      "3": "Adequately meets the criterion with clearly bounded limitations.",
+      "4": "Strongly meets the criterion; only minor, specific improvements needed.",
+      "5": "Exceptionally well supported and task-complete on this criterion; no material defect found in supplied evidence. This is not a claim of certainty."
+    },
+    "scale": "integer 0–5; weighted assessment /100, never a probability",
+    "stages": [
+      "independent_answers",
+      "anonymous_parallel_peer_review",
+      "chairman_synthesis"
+    ],
+    "review_policy": "Each reviewer sees all answers in a frozen independently shuffled order. All complete valid ballots have equal weight, including self-review as upstream. Also report leave-self-out sensitivity. No current-round reviews or author mapping in review packets. Any approved history is shared context, not new evidence or independent votes.",
+    "codex_policy": "One independent Codex participant; fresh isolated proposer and a different fresh isolated reviewer. Current chairman does not cast a second vote."
+  },
+  "new_paid_model_calls": 0,
+  "limitations": [
+    "Conversation-language detection and translated user reports are performed by the host Codex workflow, not an operating-system or browser setting.",
+    "Automated checks enforce catalog completeness, fixed markup and placeholders; translation fidelity requires assistant judgment.",
+    "Tests use synthetic providers and do not measure live models' compliance with English instructions.",
+    "Technical records, approved internal plans, code, identifiers and source quotations retain their recorded language.",
+    "Changed runtime contracts require new approval for new paid work; historical completed answers and reports remain readable."
+  ]
+}

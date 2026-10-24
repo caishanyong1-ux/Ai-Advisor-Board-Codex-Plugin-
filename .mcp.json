@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "advisoryBoard": {
+      "title": "AI Advisory Board",
+      "description": "A durable local multi-model board with human approval and Codex chairman handoff.",
+      "command": "/usr/bin/python3",
+      "args": ["-B", "./mcp/launch.py"],
+      "cwd": "."
+    }
+  }
+}

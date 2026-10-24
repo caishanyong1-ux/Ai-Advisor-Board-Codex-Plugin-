@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ai-advisory-board",
+  "version": "1.3.3",
+  "description": "A user-approved multi-provider advisory board with fresh model research, persistent meetings and Codex as chairman.",
+  "author": {
+    "name": "AI Advisory Board Contributors"
+  },
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "interface": {
+        "displayName": "AI Advisory Board",
+        "shortDescription": "Persistent multi-model meetings chaired by Codex",
+        "longDescription": "Approve workflows and complementary models using current capability and route pricing evidence. Includes Vertex, custom APIs, source snapshots, anonymous peer review, and project isolation.",
+        "developerName": "AI Advisory Board Contributors",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "defaultPrompt": [
+          "Use the board for this task. Recommend the workflow and lineup, then wait for my approval.",
+          "Inspect this project's selected board job and continue chairing it."
+        ]
+      }
+    }
+  }
+}

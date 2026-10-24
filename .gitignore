@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+*.sqlite*
+*.db
+*.log
+api-connections.json
+application_default_credentials.json
+vertex-config.json
+endpoint.json

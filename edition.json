@@ -1,0 +1,5 @@
+{
+  "edition": "public",
+  "excluded_publishers": [],
+  "reuse_grok_connection": false
+}
