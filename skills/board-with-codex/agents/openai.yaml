@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Advisory Board"
+  short_description: "User-approved multi-model work chaired by Codex"
+  default_prompt: "Use $board-with-codex for this task. Recommend the workflow and model lineup with reasons, and wait for my approval."
