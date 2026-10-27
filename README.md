@@ -36,18 +36,6 @@ Only the user can close the board project. Model agreement is advisory and still
 
 These prompt changes apply to newly approved meetings. Historical results remain readable; completed valid ballots can still support chairman synthesis. Old approvals cannot launch paid work under the new protocol. Preserve them as history and prepare a new proposal when new work is needed.
 
-## Editions
-
-| | Public | Personal |
-|---|---|---|
-| Claude | Full Vertex Claude adapters retained | Adapters/history retained; Anthropic excluded from recommendations and execution |
-| Vertex | Each user connects their own Google account and Cloud project | Uses the owner's existing local connection |
-| Grok | User adds xAI or uses an enabled Vertex route | Can reuse the existing local Grok connection directly |
-| Other APIs | Add, edit, enable, disable, or remove | Same |
-| Packaged user data | No credentials, account configuration, or meeting records | Same; installation reads separate private local state |
-
-The editions are alternative installations of the same plugin. `edition.json` determines defaults. Building a public ZIP does not publish a marketplace listing. The plugin is available under the [MIT License](LICENSE); upstream-derived portions retain their original MIT notices in [NOTICE.md](NOTICE.md) and [the upstream license](licenses/ai-advisory-board-MIT.txt).
-
 ## Installation and setup
 
 Requirements: macOS, Codex desktop with the `codex` CLI available, and Python 3.9+. From the extracted package:
